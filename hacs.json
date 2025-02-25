@@ -1,0 +1,9 @@
+
+{
+    "name": "Weather Photo Voltaic Card",
+    "render_readme": true,
+    "filename": "weather-pv-card-prod.js",
+    "version": "1.0.0",
+    "description": "A weather card for Home Assistant that displays the weather and photo voltaic panels forecast."
+}
+  
