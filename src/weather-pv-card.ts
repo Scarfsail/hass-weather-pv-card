@@ -49,7 +49,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     constructor() {
         super();
         //dayjs.locale('cs');
-        dayjs.locale(this._hass?.locale?.language ?? 'en')
+        dayjs.locale(this._hass?.locale?.language ?? 'cs')
     }
 
     public set hass(value: HomeAssistant) {
