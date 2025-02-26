@@ -10,8 +10,7 @@
             "type": "msedge",
             "url": "http://localhost:8123/",
             "webRoot": "${workspaceFolder}",
-            "sourceMaps": true,
-
-        },
+            "sourceMaps": true
+        }
     ]
 }
