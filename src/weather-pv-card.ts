@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import duration from 'dayjs/plugin/duration'
 import "./weather-value-column"
 import { PvForecast, PvForecastRaw, WeatherForecast, WeatherForecastRaw } from "./models";
+import 'dayjs/locale/cs';
 
 dayjs.extend(duration);
 
@@ -166,7 +167,6 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         if (!this._hass?.states[this.config.pv_entity]) {
             return `Entity ${this.config.pv_entity} not found`;
         }
-
         return html`
             <ha-card>
                 <div class="forecast-container">
@@ -177,8 +177,8 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
 
                     return html`
                         <div class="forecast-day">
-                            <div class="day-name">${dayjs(day.datetime).format('ddd')}</div>
-                            <div>${dayjs(day.datetime).format('D.')}</div>
+                            <div class="day-name">${day.datetime.locale(this._hass?.locale?.language ?? 'en').format('ddd')}</div>
+                            <div>${day.datetime.format('D.')}</div>
                             <ha-icon icon=${weatherIconsHassNative[day.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
                             <div class="forecast-bar">
                                 <weather-value-column 
