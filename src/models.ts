@@ -31,3 +31,8 @@ export interface PvForecast {
     time: dayjs.Dayjs;
     power: number;
 }
+export interface Forecasts {
+    weatherDaily: WeatherForecast[];
+    weatherHourly: WeatherForecast[];
+    pv: PvForecast[];
+}

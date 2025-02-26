@@ -6,8 +6,9 @@ import type { LovelaceCardConfig } from "../hass-frontend/src/data/lovelace/conf
 import dayjs from "dayjs";
 import duration from 'dayjs/plugin/duration'
 import "./weather-value-column"
-import { PvForecast, PvForecastRaw, WeatherForecast, WeatherForecastRaw } from "./models";
+import { Forecasts, PvForecast, PvForecastRaw, WeatherForecast, WeatherForecastRaw } from "./models";
 import 'dayjs/locale/cs';
+import { collectForecastData } from "./data-collector";
 
 dayjs.extend(duration);
 
@@ -34,15 +35,15 @@ const weatherIconsHassNative = {
     'sunny': 'hass:weather-sunny',
     'windy': 'hass:weather-windy',
     'windy-variant': 'hass:weather-windy-variant'
-  };
+};
 
 @customElement("weather-pv-card")
 export class WeatherPvCard extends LitElement implements LovelaceCard {
 
     private config?: WeatherPvCardConfig;
     @state() private _hass?: HomeAssistant;
-    @state() private _forecast: WeatherForecast[] = [];
-    @state() private _pvForecast: PvForecast[] = [];
+    @state() private _forecasts?: Forecasts;
+    @state() private _selectedDay?: dayjs.Dayjs;
     private _updateTimer?: number;
 
     public set hass(value: HomeAssistant) {
@@ -90,37 +91,11 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     private async updateData() {
-        if (!this._hass || !this.config?.entity) return;
+        if (!this._hass || !this.config?.entity)
+            return;
 
         try {
-            const forecast = await this._hass.callService('weather', 'get_forecasts', {
-                type: 'daily'
-            }, {
-
-                entity_id: this.config.entity
-            }, false, true);
-
-            // Get wather forecast from service response
-            this._forecast = (forecast.response[this.config.entity].forecast as WeatherForecastRaw[]).map(forecast => ({
-                datetime: dayjs(forecast.datetime),
-                condition: forecast.condition,
-                wind_bearing: forecast.wind_bearing,
-                uv_index: forecast.uv_index,
-                temperature: Math.round(forecast.temperature),
-                templow: Math.round(forecast.templow),
-                wind_speed: Math.round(forecast.wind_speed),
-                precipitation: forecast.precipitation,
-                humidity: Math.round(forecast.humidity)
-            }));
-
-            // Get PV forecast from entity attribute
-            if (this.config.pv_entity && this._hass.states[this.config.pv_entity]) {
-                const pvEntity = this._hass.states[this.config.pv_entity];
-                this._pvForecast = (pvEntity.attributes.forecast as PvForecastRaw[]).map(forecast => ({
-                    time: dayjs(forecast.time),
-                    power: Math.round(forecast.power / 1000)
-                })) || [];
-            }
+            this._forecasts = await collectForecastData(this.config.entity, this.config.pv_entity, this._hass);
         } catch (e) {
             console.error("Error fetching forecast:", e);
         }
@@ -167,59 +142,65 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         if (!this._hass?.states[this.config.pv_entity]) {
             return `Entity ${this.config.pv_entity} not found`;
         }
+        
+        if (!this._forecasts) {
+            return "Loading...";
+        }
+
+        const dailyForecast = this._forecasts.weatherDaily;
+        const pvForecast = this._forecasts.pv;
+
         return html`
             <ha-card>
                 <div class="forecast-container">
-                    ${this._forecast.map(day => {
-                    const pvData = this._pvForecast.find(pv =>
-                        pv.time.format('YYYY-MM-DD') === dayjs(day.datetime).format('YYYY-MM-DD')
-                    );
+                    ${dailyForecast.map(day => {
+                        const pvData = pvForecast.find(pv =>pv.time.format('YYYY-MM-DD') === dayjs(day.datetime).format('YYYY-MM-DD'));
 
-                    return html`
-                        <div class="forecast-day">
-                            <div class="day-name">${day.datetime.locale(this._hass?.locale?.language ?? 'en').format('ddd')}</div>
-                            <div>${day.datetime.format('D.')}</div>
-                            <ha-icon icon=${weatherIconsHassNative[day.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
-                            <div class="forecast-bar">
-                                <weather-value-column 
-                                    .value=${day.temperature}
-                                    .allValues=${this._forecast.map(d => d.temperature)}
-                                    color="#77450D"
-                                    units="°C"
-                                ></weather-value-column>
-                                <weather-value-column 
-                                    .value=${day.templow}
-                                    .allValues=${this._forecast.map(d => d.templow)}
-                                    color="#2F343C"
-                                    units="°C"
-                                ></weather-value-column>
-                                <weather-value-column 
-                                    .value=${day.precipitation}
-                                    .allValues=${this._forecast.map(d => d.precipitation)}
-                                    color="#0C5174"
-                                    units="mm"
-                                    fontSizeRatio=80
-                                ></weather-value-column>
-                                <weather-value-column 
-                                    .value=${day.wind_speed}
-                                    .allValues=${this._forecast.map(d => d.wind_speed)}
-                                    color="#004D46"
-                                    units="km/h"
-                                    fontSizeRatio=80
-                                ></weather-value-column>                        
-                                ${pvData ? html`
-                                    <weather-value-column
-                                        .value=${pvData.power}
-                                        .allValues=${this._pvForecast.map(d => d.power)}
-                                        color="#5C4405"
-                                        units="kW"
+                        return html`
+                            <div class="forecast-day">
+                                <div class="day-name">${day.datetime.locale(this._hass?.locale?.language ?? 'en').format('ddd')}</div>
+                                <div>${day.datetime.format('D.')}</div>
+                                <ha-icon icon=${weatherIconsHassNative[day.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
+                                <div class="forecast-bar">
+                                    <weather-value-column 
+                                        .value=${day.temperature}
+                                        .allValues=${dailyForecast.map(d => d.temperature)}
+                                        color="#77450D"
+                                        units="°C"
+                                    ></weather-value-column>
+                                    <weather-value-column 
+                                        .value=${day.templow}
+                                        .allValues=${dailyForecast.map(d => d.templow)}
+                                        color="#2F343C"
+                                        units="°C"
+                                    ></weather-value-column>
+                                    <weather-value-column 
+                                        .value=${day.precipitation}
+                                        .allValues=${dailyForecast.map(d => d.precipitation)}
+                                        color="#0C5174"
+                                        units="mm"
                                         fontSizeRatio=80
-                                        ></weather-value-column>
-                                ` : ''}
+                                    ></weather-value-column>
+                                    <weather-value-column 
+                                        .value=${day.wind_speed}
+                                        .allValues=${dailyForecast.map(d => d.wind_speed)}
+                                        color="#004D46"
+                                        units="km/h"
+                                        fontSizeRatio=80
+                                    ></weather-value-column>                        
+                                    ${pvData ? html`
+                                        <weather-value-column
+                                            .value=${pvData.power}
+                                            .allValues=${pvForecast.map(d => d.power)}
+                                            color="#5C4405"
+                                            units="kWh"
+                                            fontSizeRatio=80
+                                            ></weather-value-column>
+                                    ` : ''}
+                                </div>
                             </div>
-                        </div>
-                    `;
-                })}
+                        `;
+                    })}
                 </div>
             </ha-card>
         `
