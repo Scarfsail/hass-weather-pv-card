@@ -14,7 +14,7 @@ dayjs.extend(duration);
 
 interface WeatherPvCardConfig extends LovelaceCardConfig {
     entity: string;
-    pv_entity: string;
+    pv_forecast_entities: string[];
     update_interval?: number;  // in minutes
 }
 
@@ -69,7 +69,13 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         return {
             type: `custom:weather-pv-card`,
             entity: "weather.home",
-            pv_forecast_entity: "sensor.pv_power_forecas"
+            pv_forecast_entities: [
+                "sensor.pv_forecast_today",
+                "sensor.pv_forecast_tomorrow",
+                "sensor.pv_forecast_day_3",
+                "sensor.pv_forecast_day_4",
+                "sensor.pv_forecast_day_5"
+            ]
         };
     }
 
@@ -101,7 +107,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             return;
 
         try {
-            this._forecasts = await collectForecastData(this.config.entity, this.config.pv_entity, this._hass);
+            this._forecasts = await collectForecastData(this.config.entity, this.config.pv_forecast_entities, this._hass);
         } catch (e) {
             console.error("Error fetching forecast:", e);
         }
@@ -160,8 +166,13 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         if (!entity) {
             return `Entity ${this.config.entity} not found`;
         }
-        if (!this._hass?.states[this.config.pv_entity]) {
-            return `Entity ${this.config.pv_entity} not found`;
+        
+        // Check if any of the PV forecast entities are missing
+        const missingPvEntities = this.config.pv_forecast_entities?.filter(entityId => 
+            !this._hass?.states[entityId]
+        );
+        if (missingPvEntities && missingPvEntities.length > 0) {
+            return `PV forecast entities not found: ${missingPvEntities.join(', ')}`;
         }
 
         if (!this._forecasts) {

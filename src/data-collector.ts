@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import type { HomeAssistant } from "../hass-frontend/src/types";
 import { Forecasts, PvForecast, PvForecastRaw, WeatherForecastRaw } from "./models";
-export async function collectForecastData(entity_weather: string, entity_pv: string, hass: HomeAssistant): Promise<Forecasts> {
+export async function collectForecastData(entity_weather: string, pv_forecast_entities: string[], hass: HomeAssistant): Promise<Forecasts> {
 
     try {
         const dailyForecastRaw = await hass.callService('weather', 'get_forecasts',
@@ -36,13 +36,22 @@ export async function collectForecastData(entity_weather: string, entity_pv: str
         }));
 
         let pvForecast: PvForecast[] = [];
-        // Get PV forecast from entity attribute
-        if (entity_pv && hass.states[entity_pv]) {
-            const pvEntity = hass.states[entity_pv];
-            pvForecast = (pvEntity.attributes.forecast as PvForecastRaw[]).map(forecast => ({
-                time: dayjs(forecast.time),
-                power: Math.round(forecast.power / 1000)
-            })) || [];
+        // Get PV forecast from entity states (each entity represents one day)
+        if (pv_forecast_entities && pv_forecast_entities.length > 0) {
+            pvForecast = pv_forecast_entities
+                .map((entityId, index) => {
+                    const entity = hass.states[entityId];
+                    if (!entity) return null;
+                    
+                    // Calculate the date for this forecast (today + index days)
+                    const forecastDate = dayjs().add(index, 'day');
+                    
+                    return {
+                        time: forecastDate,
+                        power: Math.round(Number(entity.state))
+                    };
+                })
+                .filter((forecast): forecast is PvForecast => forecast !== null);
         }
         return { weatherDaily: dailyForecast, weatherHourly: hourlyForecast, pv: pvForecast };
     } catch (e) {
