@@ -44,7 +44,11 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     @state() private _hass?: HomeAssistant;
     @state() private _forecasts?: Forecasts;
     @state() private _selectedDay?: dayjs.Dayjs;
+    @state() private _error?: string;
     private _updateTimer?: number;
+    private _lastUpdateDate?: string;
+    private _retryCount: number = 0;
+    private _maxRetries: number = 3;
 
     constructor() {
         super();
@@ -54,10 +58,30 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
 
     public set hass(value: HomeAssistant) {
         const hassWasSet = this._hass !== undefined;
+        const oldHass = this._hass;
         this._hass = value;
 
+        // Start the update timer when hass is first set
         if (!hassWasSet) {
+            this.startDataUpdate();
+        }
+        
+        // Check if the day has changed and refresh data if needed
+        const currentDate = dayjs().format('YYYY-MM-DD');
+        if (this._lastUpdateDate && this._lastUpdateDate !== currentDate) {
+            console.log('Day changed, refreshing weather-pv-card data');
             this.updateData();
+        }
+        
+        // Update data if entities changed or became available
+        if (oldHass && this.config) {
+            const entitiesChanged = this.config.pv_forecast_entities?.some(entityId => 
+                oldHass.states[entityId]?.state !== value.states[entityId]?.state
+            ) || oldHass.states[this.config.entity]?.state !== value.states[this.config.entity]?.state;
+            
+            if (entitiesChanged) {
+                this.updateData();
+            }
         }
     }
 
@@ -84,7 +108,11 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             update_interval: 30,  // default 30 minutes
             ...config
         };
-        this.startDataUpdate();
+        // Don't start timer here - wait for hass to be set in the hass setter
+        // If hass is already available, update now
+        if (this._hass) {
+            this.startDataUpdate();
+        }
     }
 
     disconnectedCallback() {
@@ -95,7 +123,15 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     private startDataUpdate() {
+        // Clear any existing timer
+        if (this._updateTimer) {
+            window.clearInterval(this._updateTimer);
+        }
+        
+        // Update data immediately
         this.updateData();
+        
+        // Set up periodic updates
         this._updateTimer = window.setInterval(
             () => this.updateData(),
             (this.config?.update_interval || 30) * 60 * 1000
@@ -103,13 +139,33 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     private async updateData() {
-        if (!this._hass || !this.config?.entity)
+        if (!this._hass || !this.config?.entity) {
+            console.warn('Cannot update data: hass or config not ready');
             return;
+        }
 
         try {
             this._forecasts = await collectForecastData(this.config.entity, this.config.pv_forecast_entities, this._hass);
+            this._error = undefined;  // Clear any previous errors
+            this._retryCount = 0;  // Reset retry counter on success
+            this._lastUpdateDate = dayjs().format('YYYY-MM-DD');  // Track when we last updated
+            console.log('Weather PV card data updated successfully');
         } catch (e) {
             console.error("Error fetching forecast:", e);
+            this._retryCount++;
+            
+            // Set error message
+            this._error = `Failed to load weather data${this._retryCount > 1 ? ` (attempt ${this._retryCount}/${this._maxRetries})` : ''}`;
+            
+            // Retry logic with exponential backoff
+            if (this._retryCount < this._maxRetries) {
+                const retryDelay = Math.min(1000 * Math.pow(2, this._retryCount - 1), 30000); // Max 30 seconds
+                console.log(`Retrying in ${retryDelay}ms...`);
+                setTimeout(() => this.updateData(), retryDelay);
+            } else {
+                this._error = 'Failed to load weather data. Please check your configuration and try refreshing the page.';
+                console.error('Max retries reached. Data update failed.');
+            }
         }
     }
 
@@ -172,11 +228,41 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             !this._hass?.states[entityId]
         );
         if (missingPvEntities && missingPvEntities.length > 0) {
-            return `PV forecast entities not found: ${missingPvEntities.join(', ')}`;
+            return html`
+                <ha-card>
+                    <div style="padding: 16px; color: var(--error-color, #ff0000);">
+                        PV forecast entities not found: ${missingPvEntities.join(', ')}
+                    </div>
+                </ha-card>
+            `;
         }
 
+        // Show error state if data fetch failed
+        if (this._error && !this._forecasts) {
+            return html`
+                <ha-card>
+                    <div style="padding: 16px; text-align: center;">
+                        <div style="color: var(--error-color, #ff0000); margin-bottom: 8px;">
+                            ${this._error}
+                        </div>
+                        <button @click=${() => this.retryNow()} style="padding: 8px 16px; cursor: pointer;">
+                            Retry Now
+                        </button>
+                    </div>
+                </ha-card>
+            `;
+        }
+
+        // Show loading state
         if (!this._forecasts) {
-            return "Loading...";
+            return html`
+                <ha-card>
+                    <div style="padding: 16px; text-align: center;">
+                        <div>Loading weather data...</div>
+                        ${this._retryCount > 0 ? html`<div style="font-size: 0.9em; color: var(--secondary-text-color); margin-top: 8px;">Retry ${this._retryCount}/${this._maxRetries}</div>` : ''}
+                    </div>
+                </ha-card>
+            `;
         }
 
 
@@ -290,6 +376,12 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                 </div>
             </div>
             `
+    }
+    
+    private retryNow() {
+        this._retryCount = 0;
+        this._error = undefined;
+        this.updateData();
     }
 }
 
