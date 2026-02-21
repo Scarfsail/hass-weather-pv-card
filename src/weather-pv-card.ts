@@ -16,6 +16,7 @@ interface WeatherPvCardConfig extends LovelaceCardConfig {
     entity: string;
     pv_forecast_entities: string[];
     update_interval?: number;  // in minutes
+    days_to_show?: number;
 }
 
 
@@ -278,9 +279,12 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     private renderDays(dailyForecast: WeatherForecast[], pvForecast: PvForecast[]) {
-        return html` 
+        const visibleForecast = this.config?.days_to_show != null
+            ? dailyForecast.slice(0, this.config.days_to_show)
+            : dailyForecast;
+        return html`
             <div class="forecast-container">
-                ${dailyForecast.map(day => {
+                ${visibleForecast.map(day => {
                     const pvData = pvForecast.find(pv => pv.time.format('YYYY-MM-DD') === dayjs(day.datetime).format('YYYY-MM-DD'));
                     return html`
                         <div class="forecast-interval forecast-interval-daily" @click=${() => this._selectedDay = day.datetime}>
@@ -288,32 +292,32 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                             <div>${day.datetime.format('D.')}</div>
                             <ha-icon icon=${weatherIconsHassNative[day.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
                             <div class="forecast-values">
-                                <weather-value-column 
+                                <weather-value-column
                                     .value=${day.temperature}
-                                    .allValues=${dailyForecast.map(d => d.temperature)}
+                                    .allValues=${visibleForecast.map(d => d.temperature)}
                                     color="#77450D"
                                     units="°C"
                                 ></weather-value-column>
-                                <weather-value-column 
+                                <weather-value-column
                                     .value=${day.templow}
-                                    .allValues=${dailyForecast.map(d => d.templow)}
+                                    .allValues=${visibleForecast.map(d => d.templow)}
                                     color="#2F343C"
                                     units="°C"
                                 ></weather-value-column>
-                                <weather-value-column 
+                                <weather-value-column
                                     .value=${day.precipitation}
-                                    .allValues=${dailyForecast.map(d => d.precipitation)}
+                                    .allValues=${visibleForecast.map(d => d.precipitation)}
                                     color="#0C5174"
                                     units="mm"
                                     fontSizeRatio=80
                                 ></weather-value-column>
-                                <weather-value-column 
+                                <weather-value-column
                                     .value=${day.wind_speed}
-                                    .allValues=${dailyForecast.map(d => d.wind_speed)}
+                                    .allValues=${visibleForecast.map(d => d.wind_speed)}
                                     color="#004D46"
                                     units="km/h"
                                     fontSizeRatio=80
-                                ></weather-value-column>                        
+                                ></weather-value-column>
                                 ${pvData ? html`
                                     <weather-value-column
                                         .value=${pvData.power}
