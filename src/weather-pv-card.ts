@@ -14,7 +14,7 @@ dayjs.extend(duration);
 
 interface WeatherPvCardConfig extends LovelaceCardConfig {
     entity: string;
-    pv_forecast_entities: string[];
+    solar_forecast_entry?: string;
     update_interval?: number;  // in minutes
     days_to_show?: number;
 }
@@ -74,13 +74,8 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             this.updateData();
         }
         
-        // Update data if entities changed or became available
         if (oldHass && this.config) {
-            const entitiesChanged = this.config.pv_forecast_entities?.some(entityId => 
-                oldHass.states[entityId]?.state !== value.states[entityId]?.state
-            ) || oldHass.states[this.config.entity]?.state !== value.states[this.config.entity]?.state;
-            
-            if (entitiesChanged) {
+            if (oldHass.states[this.config.entity]?.state !== value.states[this.config.entity]?.state) {
                 this.updateData();
             }
         }
@@ -94,13 +89,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         return {
             type: `custom:weather-pv-card`,
             entity: "weather.home",
-            pv_forecast_entities: [
-                "sensor.pv_forecast_today",
-                "sensor.pv_forecast_tomorrow",
-                "sensor.pv_forecast_day_3",
-                "sensor.pv_forecast_day_4",
-                "sensor.pv_forecast_day_5"
-            ]
+            solar_forecast_entry: ""
         };
     }
 
@@ -146,7 +135,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         }
 
         try {
-            this._forecasts = await collectForecastData(this.config.entity, this.config.pv_forecast_entities, this._hass);
+            this._forecasts = await collectForecastData(this.config.entity, this.config.solar_forecast_entry, this._hass);
             this._error = undefined;  // Clear any previous errors
             this._retryCount = 0;  // Reset retry counter on success
             this._lastUpdateDate = dayjs().format('YYYY-MM-DD');  // Track when we last updated
@@ -224,20 +213,6 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             return `Entity ${this.config.entity} not found`;
         }
         
-        // Check if any of the PV forecast entities are missing
-        const missingPvEntities = this.config.pv_forecast_entities?.filter(entityId => 
-            !this._hass?.states[entityId]
-        );
-        if (missingPvEntities && missingPvEntities.length > 0) {
-            return html`
-                <ha-card>
-                    <div style="padding: 16px; color: var(--error-color, #ff0000);">
-                        PV forecast entities not found: ${missingPvEntities.join(', ')}
-                    </div>
-                </ha-card>
-            `;
-        }
-
         // Show error state if data fetch failed
         if (this._error && !this._forecasts) {
             return html`
