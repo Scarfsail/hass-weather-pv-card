@@ -36,3 +36,9 @@ export interface Forecasts {
     weatherHourly: WeatherForecast[];
     pv: PvForecast[];
 }
+
+export interface SolarForecastWsResponse {
+    [configEntryId: string]: {
+        wh_hours: { [isoTimestamp: string]: number };
+    };
+}
