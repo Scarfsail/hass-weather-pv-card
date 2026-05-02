@@ -6,7 +6,7 @@ import type { LovelaceCardConfig } from "../hass-frontend/src/data/lovelace/conf
 import dayjs from "dayjs";
 import duration from 'dayjs/plugin/duration'
 import "./weather-value-column"
-import { Forecasts, PvForecast, PvForecastRaw, WeatherForecast, WeatherForecastRaw } from "./models";
+import { Forecasts, PvForecast, WeatherForecast, WeatherForecastRaw } from "./models";
 import 'dayjs/locale/cs';
 import { collectForecastData } from "./data-collector";
 

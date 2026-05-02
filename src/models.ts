@@ -23,10 +23,6 @@ export interface WeatherForecast {
     humidity: number;
 }
 
-export interface PvForecastRaw {
-    time: string;
-    power: number;
-}
 export interface PvForecast {
     time: dayjs.Dayjs;
     power: number;
