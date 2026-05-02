@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import type { HomeAssistant } from "../hass-frontend/src/types";
-import { Forecasts, PvForecast, SolarForecastWsResponse, WeatherForecastRaw } from "./models";
+import { EnergyPrefs, Forecasts, PvForecast, SolarForecastWsResponse, WeatherForecastRaw } from "./models";
 
 export async function collectForecastData(
     entity_weather: string,
@@ -39,6 +39,12 @@ export async function collectForecastData(
         }));
 
         let pvForecast: PvForecast[] = [];
+
+        if (!solar_forecast_entry) {
+            const prefs = await hass.callWS<EnergyPrefs>({ type: 'energy/get_prefs' });
+            const solarSource = prefs.energy_sources.find(s => s.type === 'solar');
+            solar_forecast_entry = solarSource?.config_entry_solar_forecast?.[0];
+        }
 
         if (solar_forecast_entry) {
             const wsResponse = await hass.callWS<SolarForecastWsResponse>({

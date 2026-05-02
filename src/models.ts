@@ -38,3 +38,10 @@ export interface SolarForecastWsResponse {
         wh_hours: { [isoTimestamp: string]: number | null };
     };
 }
+
+export interface EnergyPrefs {
+    energy_sources: Array<{
+        type: string;
+        config_entry_solar_forecast?: string[];
+    }>;
+}
