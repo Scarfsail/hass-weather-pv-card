@@ -41,9 +41,13 @@ export async function collectForecastData(
         let pvForecast: PvForecast[] = [];
 
         if (!solar_forecast_entry) {
-            const prefs = await hass.callWS<EnergyPrefs>({ type: 'energy/get_prefs' });
-            const solarSource = prefs.energy_sources.find(s => s.type === 'solar');
-            solar_forecast_entry = solarSource?.config_entry_solar_forecast?.[0];
+            try {
+                const prefs = await hass.callWS<EnergyPrefs>({ type: 'energy/get_prefs' });
+                const solarSource = prefs.energy_sources.find(s => s.type === 'solar');
+                solar_forecast_entry = solarSource?.config_entry_solar_forecast?.[0];
+            } catch (prefsError) {
+                console.warn('[weather-pv-card] Could not fetch energy prefs for solar forecast auto-detect:', prefsError);
+            }
         }
 
         if (solar_forecast_entry) {
