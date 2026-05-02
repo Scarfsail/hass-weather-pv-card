@@ -39,6 +39,6 @@ export interface Forecasts {
 
 export interface SolarForecastWsResponse {
     [configEntryId: string]: {
-        wh_hours: { [isoTimestamp: string]: number };
+        wh_hours: { [isoTimestamp: string]: number | null };
     };
 }

@@ -50,7 +50,7 @@ export async function collectForecastData(
                 const dailyWh: { [date: string]: number } = {};
                 for (const [isoTimestamp, wh] of Object.entries(entryData.wh_hours)) {
                     const date = dayjs(isoTimestamp).format('YYYY-MM-DD');
-                    dailyWh[date] = (dailyWh[date] ?? 0) + wh;
+                    dailyWh[date] = (dailyWh[date] ?? 0) + (wh ?? 0);
                 }
                 pvForecast = Object.entries(dailyWh)
                     .sort(([a], [b]) => a.localeCompare(b))
