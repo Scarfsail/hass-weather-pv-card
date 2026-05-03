@@ -1,7 +1,7 @@
 {
   "name": "weather-pv-card",
   "version": "1.0.0",
-  "description": "A weather card for Home Assistant that displays the weather and photo voltaic panels forecast for the next 7 days.",
+  "description": "A weather card for Home Assistant that displays the weather and photovoltaic panels forecast for the next 7 days.",
   "main": "dist/weather-pv-card-prod.js",
   "scripts": {
     "build-dev": "vite build --mode development",
