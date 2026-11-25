@@ -80,13 +80,9 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     static styles = css`
-        /* The only place colours are defined: data accents for light and dark themes */
+        /* Data accents for light and dark themes; the temperature scale lives in temperature-colors.ts */
         :host {
-            --wpv-temp-high: #E8772E;
-            --wpv-temp-low: #3D7FD9;
-            --wpv-temp-high-label: #B85A1A;
-            --wpv-temp-low-label: #2F66B3;
-            --wpv-temp-area: rgba(61, 127, 217, 0.1);
+            --wpv-temp-area: rgba(0, 0, 0, 0.04);
             --wpv-rain-rgb: 40, 110, 230;
             --wpv-wind-rgb: 20, 160, 140;
             --wpv-pv-rgb: 235, 170, 0;
@@ -95,11 +91,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             --wpv-cond-rain: #3D8FE0;
         }
         :host([dark]) {
-            --wpv-temp-high: #FF9A5A;
-            --wpv-temp-low: #6FA8F0;
-            --wpv-temp-high-label: #FFB98A;
-            --wpv-temp-low-label: #9CC3F5;
-            --wpv-temp-area: rgba(111, 168, 240, 0.12);
+            --wpv-temp-area: rgba(255, 255, 255, 0.05);
             --wpv-rain-rgb: 70, 140, 255;
             --wpv-wind-rgb: 60, 198, 176;
             --wpv-pv-rgb: 245, 190, 40;
@@ -222,6 +214,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     private _hours: WeatherForecast[] = [];
     // High (and low) temperatures of the shown days or hours
     private _temperatures: number[][] = [];
+    private _temperatureUnit = "°C";
     private _columnRanges: ValueRange[] = [];
     // PV per shown day or hour; empty hides the PV row
     private _pv: number[] = [];
@@ -282,6 +275,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         }
 
         this.toggleAttribute("dark", this._hass.themes.darkMode);
+        this._temperatureUnit = (this._hass.states[this._config.entity]?.attributes.temperature_unit as string | undefined) ?? "°C";
         const language = this._hass.locale.language;
         this._weekdayFormat = new Intl.DateTimeFormat(language, { weekday: "short" });
         this._dayFormat = new Intl.DateTimeFormat(language, { day: "numeric" });
@@ -363,7 +357,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                         ${this.renderChips(day, index)}
                     </button>
                 `)}
-                <temperature-chart .series=${this._temperatures}></temperature-chart>
+                <temperature-chart .series=${this._temperatures} .dark=${this._hass!.themes.darkMode} .unit=${this._temperatureUnit}></temperature-chart>
             </div>
         `
     }
@@ -389,7 +383,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                                         ${this.renderChips(hour, index)}
                                     </div>
                                 `)}
-                                <temperature-chart .series=${this._temperatures}></temperature-chart>
+                                <temperature-chart .series=${this._temperatures} .dark=${this._hass!.themes.darkMode} .unit=${this._temperatureUnit}></temperature-chart>
                             </div>
                         </div>
                     `}

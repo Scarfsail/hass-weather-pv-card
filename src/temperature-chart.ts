@@ -1,5 +1,6 @@
-import { html, css, svg, LitElement, PropertyValues } from "lit";
+import { html, css, svg, nothing, LitElement, PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { fromCelsius, labelColour, maxCelsius, minCelsius, temperatureStops, toCelsius } from "./temperature-colors";
 
 // The vertical scale spans at least this many degrees, so a flat day looks flat
 const minSpan = 8;
@@ -9,6 +10,7 @@ interface Label {
     left: number;
     top: number;
     text: string;
+    colour: string;
 }
 
 // Runs of consecutive indices where `isValid` holds; a missing point breaks the line
@@ -56,12 +58,13 @@ export class TemperatureChart extends LitElement {
             stroke-linejoin: round;
             stroke-linecap: round;
             vector-effect: non-scaling-stroke;
-        }
-        polyline.series-0 {
-            stroke: var(--wpv-temp-high);
+            stroke: url(#temp-gradient) currentColor;
         }
         polyline.series-1 {
-            stroke: var(--wpv-temp-low);
+            stroke-opacity: 0.45;
+        }
+        :host([dark]) polyline.series-1 {
+            stroke-opacity: 0.6;
         }
         polygon {
             fill: var(--wpv-temp-area);
@@ -75,11 +78,10 @@ export class TemperatureChart extends LitElement {
         .label.series-0 {
             transform: translate(-50%, calc(-100% - 4px));
             font-weight: 600;
-            color: var(--wpv-temp-high-label);
         }
         .label.series-1 {
             transform: translate(-50%, 4px);
-            color: var(--wpv-temp-low-label);
+            opacity: 0.75;
         }
     `;
 
@@ -87,9 +89,15 @@ export class TemperatureChart extends LitElement {
     private _lines: string[][] = [];
     private _areas: string[] = [];
     private _labels: Label[] = [];
+    private _gradientY1 = 0;
+    private _gradientY2 = 0;
+    private _gradientStops: { offset: number; colour: string }[] = [];
 
     // One (high) or two (high, low) series of equal length
     @property({ attribute: false }) series: number[][] = [];
+    @property({ type: Boolean, reflect: true }) dark = false;
+    // Unit of the series values; colours are looked up in °C
+    @property() unit = "°C";
 
     willUpdate(changedProperties: PropertyValues<this>) {
         super.willUpdate(changedProperties);
@@ -98,6 +106,16 @@ export class TemperatureChart extends LitElement {
         const highest = Math.max(...finite);
         const span = Math.max(highest - lowest, minSpan);
         const top = (lowest + highest + span) / 2;
+
+        // The vertical colour gradient runs from 40 °C to −20 °C, placed on the chart's own y axis
+        const toY = (celsius: number) => 100 * (top - fromCelsius(celsius, this.unit)) / span;
+        this._gradientY1 = toY(maxCelsius);
+        this._gradientY2 = toY(minCelsius);
+        // No gradient without any finite value: its y would be NaN
+        // SVG needs ascending offsets; the stops run from cold to warm, so the mapped copy is reversed
+        this._gradientStops = !finite.length ? [] : temperatureStops(this.dark)
+            .map(([celsius, colour]) => ({ offset: (maxCelsius - celsius) / (maxCelsius - minCelsius), colour }))
+            .reverse();
 
         // x in column units, y in percent of the plot height; NaN for a missing value
         this._columns = Math.max(0, ...this.series.map(values => values.length));
@@ -114,7 +132,13 @@ export class TemperatureChart extends LitElement {
             : [];
 
         this._labels = ys.flatMap((y, series) => y.flatMap((yValue, index) => Number.isFinite(yValue)
-            ? [{ series, left: 100 * (index + 0.5) / this._columns, top: yValue, text: `${this.series[series][index]}°` }]
+            ? [{
+                series,
+                left: 100 * (index + 0.5) / this._columns,
+                top: yValue,
+                text: `${this.series[series][index]}°`,
+                colour: labelColour(toCelsius(this.series[series][index], this.unit), this.dark),
+            }]
             : []));
     }
 
@@ -122,11 +146,16 @@ export class TemperatureChart extends LitElement {
         return html`
             <div class="plot">
                 <svg viewBox="0 0 ${this._columns} 100" preserveAspectRatio="none">
+                    ${this._gradientStops.length ? svg`<defs>
+                        <linearGradient id="temp-gradient" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1=${this._gradientY1} y2=${this._gradientY2}>
+                            ${this._gradientStops.map(stop => svg`<stop offset=${stop.offset} stop-color=${stop.colour}></stop>`)}
+                        </linearGradient>
+                    </defs>` : nothing}
                     ${this._areas.map(points => svg`<polygon points=${points}></polygon>`)}
                     ${this._lines.map((lines, series) => lines.map(points => svg`<polyline class="series-${series}" points=${points}></polyline>`))}
                 </svg>
                 ${this._labels.map(label => html`
-                    <span class="label series-${label.series}" style="left: ${label.left}%; top: ${label.top}%">${label.text}</span>
+                    <span class="label series-${label.series}" style="left: ${label.left}%; top: ${label.top}%; color: ${label.colour}">${label.text}</span>
                 `)}
             </div>
         `;
