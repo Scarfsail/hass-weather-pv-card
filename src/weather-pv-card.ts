@@ -199,10 +199,10 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             overflow-y: hidden;
             scrollbar-width: thin;
         }
+        /* The chart takes what the header and chip rows leave, so every chip row stays visible above the scrollbar */
         .scroller .columns {
             height: 100%;
-            grid-template-rows: auto 72px auto;
-            align-content: start;
+            grid-template-rows: auto minmax(0, 1fr) auto;
         }
         .error {
             padding: 16px;
