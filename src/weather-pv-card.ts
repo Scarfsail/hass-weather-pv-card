@@ -1,9 +1,10 @@
 import { LitElement, PropertyValues, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { ForecastEvent, HomeAssistant, LovelaceCard, LovelaceCardConfig } from "./ha-types";
-import "./weather-value-column"
-import { PvForecast, WeatherForecast } from "./models";
-import { toForecast, toPvForecast } from "./data-collector";
+import "./weather-value-chip";
+import "./temperature-chart";
+import { WeatherForecast } from "./models";
+import { isSameDay, toForecast, toHourlyPv, toPvForecast } from "./data-collector";
 
 interface WeatherPvCardConfig extends LovelaceCardConfig {
     entity: string;
@@ -19,51 +20,46 @@ interface ValueRange {
 }
 
 interface ColumnStyle {
+    // Name of a CSS variable holding an "r, g, b" triplet
     color: string;
     units: string;
-    fontSizeRatio: number;
+    dashOnZero: boolean;
 }
 
 interface WeatherColumn extends ColumnStyle {
     value: (forecast: WeatherForecast) => number;
 }
 
-const temperatureColumn: WeatherColumn = { value: f => f.temperature, color: "#77450D", units: "°C", fontSizeRatio: 100 };
-const templowColumn: WeatherColumn = { value: f => f.templow, color: "#2F343C", units: "°C", fontSizeRatio: 100 };
-const precipitationColumn: WeatherColumn = { value: f => f.precipitation, color: "#0C5174", units: "mm", fontSizeRatio: 80 };
-const windSpeedColumn: WeatherColumn = { value: f => f.wind_speed, color: "#004D46", units: "km/h", fontSizeRatio: 80 };
-const pvColumn: ColumnStyle = { color: "#5C4405", units: "kWh", fontSizeRatio: 80 };
+const precipitationColumn: WeatherColumn = { value: f => f.precipitation, color: "--wpv-rain-rgb", units: "mm", dashOnZero: true };
+const windSpeedColumn: WeatherColumn = { value: f => f.wind_speed, color: "--wpv-wind-rgb", units: "km/h", dashOnZero: false };
+const pvColumn: ColumnStyle = { color: "--wpv-pv-rgb", units: "kWh", dashOnZero: true };
 
-const dailyColumns = [temperatureColumn, templowColumn, precipitationColumn, windSpeedColumn];
-const hourlyColumns = [temperatureColumn, precipitationColumn, windSpeedColumn];
+const weatherColumns = [precipitationColumn, windSpeedColumn];
 
-const weatherIconsHassNative = {
-    'clear-night': 'hass:weather-night',
-    'cloudy': 'hass:weather-cloudy',
-    'exceptional': 'mdi:alert-circle-outline',
-    'fog': 'hass:weather-fog',
-    'hail': 'hass:weather-hail',
-    'lightning': 'hass:weather-lightning',
-    'lightning-rainy': 'hass:weather-lightning-rainy',
-    'partlycloudy': 'hass:weather-partly-cloudy',
-    'pouring': 'hass:weather-pouring',
-    'rainy': 'hass:weather-rainy',
-    'snowy': 'hass:weather-snowy',
-    'snowy-rainy': 'hass:weather-snowy-rainy',
-    'sunny': 'hass:weather-sunny',
-    'windy': 'hass:weather-windy',
-    'windy-variant': 'hass:weather-windy-variant'
+// Icon colour names a --wpv-cond-* palette variable
+const weatherIconsHassNative: Record<string, { icon: string; color: "sun" | "cloud" | "rain" }> = {
+    'clear-night': { icon: 'hass:weather-night', color: 'cloud' },
+    'cloudy': { icon: 'hass:weather-cloudy', color: 'cloud' },
+    'exceptional': { icon: 'mdi:alert-circle-outline', color: 'cloud' },
+    'fog': { icon: 'hass:weather-fog', color: 'cloud' },
+    'hail': { icon: 'hass:weather-hail', color: 'rain' },
+    'lightning': { icon: 'hass:weather-lightning', color: 'sun' },
+    'lightning-rainy': { icon: 'hass:weather-lightning-rainy', color: 'sun' },
+    'partlycloudy': { icon: 'hass:weather-partly-cloudy', color: 'sun' },
+    'pouring': { icon: 'hass:weather-pouring', color: 'rain' },
+    'rainy': { icon: 'hass:weather-rainy', color: 'rain' },
+    'snowy': { icon: 'hass:weather-snowy', color: 'rain' },
+    'snowy-rainy': { icon: 'hass:weather-snowy-rainy', color: 'rain' },
+    'sunny': { icon: 'hass:weather-sunny', color: 'sun' },
+    'windy': { icon: 'hass:weather-windy', color: 'cloud' },
+    'windy-variant': { icon: 'hass:weather-windy-variant', color: 'cloud' }
 };
 
-// Bars fill from min(0, lowest) to highest, so the highest value always has the tallest bar.
+// Chips fill from min(0, lowest) to highest, so the highest value always has the tallest fill.
 // Non-finite values (unavailable sensor, missing forecast field) are ignored.
 function valueRange(values: number[]): ValueRange {
     const finite = values.filter(Number.isFinite);
     return { min: Math.min(0, ...finite), max: Math.max(...finite) };
-}
-
-function isSameDay(a: Date, b: Date) {
-    return a.toDateString() === b.toDateString();
 }
 
 @customElement("weather-pv-card")
@@ -84,49 +80,133 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     static styles = css`
-        .forecast-container {
-            display: flex;
-            flex-direction: row;
-            justify-content: space-between;
-            padding: 16px;
+        /* The only place colours are defined: data accents for light and dark themes */
+        :host {
+            --wpv-temp-high: #E8772E;
+            --wpv-temp-low: #3D7FD9;
+            --wpv-temp-high-label: #B85A1A;
+            --wpv-temp-low-label: #2F66B3;
+            --wpv-temp-area: rgba(61, 127, 217, 0.1);
+            --wpv-rain-rgb: 40, 110, 230;
+            --wpv-wind-rgb: 20, 160, 140;
+            --wpv-pv-rgb: 235, 170, 0;
+            --wpv-cond-sun: #F0A020;
+            --wpv-cond-cloud: #8A9099;
+            --wpv-cond-rain: #3D8FE0;
         }
-        .forecast-container-hourly{
-            overflow: auto;
+        :host([dark]) {
+            --wpv-temp-high: #FF9A5A;
+            --wpv-temp-low: #6FA8F0;
+            --wpv-temp-high-label: #FFB98A;
+            --wpv-temp-low-label: #9CC3F5;
+            --wpv-temp-area: rgba(111, 168, 240, 0.12);
+            --wpv-rain-rgb: 70, 140, 255;
+            --wpv-wind-rgb: 60, 198, 176;
+            --wpv-pv-rgb: 245, 190, 40;
+            --wpv-cond-sun: #FFB74D;
+            --wpv-cond-cloud: #9AA0A6;
+            --wpv-cond-rain: #64B5F6;
         }
-        .forecast-interval {
+        .view {
+            box-sizing: border-box;
+            height: 260px;
+            padding: 8px;
+            color: var(--primary-text-color);
+        }
+        button {
+            font: inherit;
+            color: inherit;
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+        }
+        button:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: -2px;
+        }
+        /* Columns share rows (header, chart, chips) so the chart, drawn over them, lines up with every column.
+           Columns are placed explicitly, otherwise auto-placement moves them out of the chart's columns. */
+        .columns {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+        }
+        .column {
+            grid-row: 1 / -1;
+            display: grid;
+            grid-template-rows: subgrid;
+            padding: 0 4px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .columns temperature-chart {
+            grid-row: 2;
+            grid-column: 1 / -1;
+            pointer-events: none;
+        }
+        .column-header {
             display: flex;
             flex-direction: column;
             align-items: center;
-            flex: 1;
-            border-right:  0.5px solid rgb(47, 52, 60);
+            padding-top: 6px;
         }
-        .forecast-interval-daily{
-            cursor: pointer;
+        .day.today {
+            background: color-mix(in srgb, var(--secondary-text-color) 8%, transparent);
         }
-        .forecast-values {
-            margin-top: 8px;
-            width: 100%;
-            text-align: center;
+        .day:hover {
+            background: color-mix(in srgb, var(--secondary-text-color) 14%, transparent);
+        }
+        .weekday, .hour {
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .date {
+            font-size: 13px;
+            color: var(--secondary-text-color);
+        }
+        .column-header ha-icon {
+            margin-top: 4px;
+        }
+        .chips {
+            grid-row: 3;
             display: flex;
-            flex-wrap: nowrap;
+            flex-direction: column;
+            gap: 4px;
+            padding: 4px 0;
+        }
+        .hourly {
+            display: flex;
             flex-direction: column;
         }
-        .day-name{
-            font-size: 1.2em;
-            font-weight: bold;
-        }
-        .forecast-hourly-header{
+        .back {
             display: flex;
-            justify-content: flex-start;
-            padding: 16px;
-            gap: 16px;
-            font-size: 1.2em;
-            font-weight: bold;
-            cursor: pointer;
+            align-items: center;
+            gap: 8px;
+            align-self: flex-start;
+            padding: 6px 16px 6px 8px;
+            border-radius: 18px;
+            font-size: 16px;
+            font-weight: 600;
+            background: color-mix(in srgb, var(--secondary-text-color) 8%, transparent);
+        }
+        .back:hover {
+            background: color-mix(in srgb, var(--secondary-text-color) 14%, transparent);
+        }
+        .scroller {
+            flex: 1;
+            min-height: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+        }
+        /* The chart takes what the header and chip rows leave, so every chip row stays visible above the scrollbar */
+        .scroller .columns {
+            height: 100%;
+            grid-template-rows: auto minmax(0, 1fr) auto;
         }
         .error {
             padding: 16px;
-            color: var(--error-color, #ff0000);
+            color: var(--error-color, red);
         }
         .loading {
             padding: 16px;
@@ -139,10 +219,13 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     private _subscriptions: Partial<Record<ForecastType, Promise<(() => Promise<void>) | void>>> = {};
     // Derived in willUpdate
     private _days: WeatherForecast[] = [];
-    private _pv: PvForecast[] = [];
-    private _pvRange: ValueRange = { min: 0, max: 0 };
     private _hours: WeatherForecast[] = [];
+    // High (and low) temperatures of the shown days or hours
+    private _temperatures: number[][] = [];
     private _columnRanges: ValueRange[] = [];
+    // PV per shown day or hour; empty hides the PV row
+    private _pv: number[] = [];
+    private _pvRange: ValueRange = { min: 0, max: 0 };
     private _weekdayFormat?: Intl.DateTimeFormat;
     private _dayFormat?: Intl.DateTimeFormat;
     private _selectedDayFormat?: Intl.DateTimeFormat;
@@ -198,6 +281,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             return;
         }
 
+        this.toggleAttribute("dark", this._hass.themes.darkMode);
         const language = this._hass.locale.language;
         this._weekdayFormat = new Intl.DateTimeFormat(language, { weekday: "short" });
         this._dayFormat = new Intl.DateTimeFormat(language, { day: "numeric" });
@@ -206,16 +290,24 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
         if (this._selectedDay) {
             const selectedDay = this._selectedDay;
             this._hours = (this._hourly ?? []).filter(hour => isSameDay(hour.datetime, selectedDay));
-            this._columnRanges = hourlyColumns.map(column => valueRange(this._hours.map(column.value)));
+            this._temperatures = [this._hours.map(hour => hour.temperature)];
+            this._columnRanges = weatherColumns.map(column => valueRange(this._hours.map(column.value)));
+            const hourlyPv = toHourlyPv(this._hass, this._config.pv_forecast_entities ?? [], selectedDay);
+            // An hour missing from the forecast (night) produces nothing
+            this._pv = hourlyPv.length > 0
+                ? this._hours.map(hour => hourlyPv.find(pv => pv.time.getHours() === hour.datetime.getHours())?.power ?? 0)
+                : [];
         } else {
             const daily = this._daily ?? [];
             this._days = this._config.days_to_show != null ? daily.slice(0, this._config.days_to_show) : daily;
-            this._columnRanges = dailyColumns.map(column => valueRange(this._days.map(column.value)));
-            this._pv = toPvForecast(this._hass, this._config.pv_forecast_entities ?? []);
-            this._pvRange = valueRange(this._pv
-                .filter(pv => this._days.some(day => isSameDay(pv.time, day.datetime)))
-                .map(pv => pv.power));
+            this._temperatures = [this._days.map(day => day.temperature), this._days.map(day => day.templow)];
+            this._columnRanges = weatherColumns.map(column => valueRange(this._days.map(column.value)));
+            const pv = toPvForecast(this._hass, this._config.pv_forecast_entities ?? []);
+            this._pv = pv.length > 0
+                ? this._days.map(day => pv.find(forecast => isSameDay(forecast.time, day.datetime))?.power ?? NaN)
+                : [];
         }
+        this._pvRange = valueRange(this._pv);
     }
 
     render() {
@@ -260,60 +352,76 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
 
     private renderDays() {
         return html`
-            <div class="forecast-container">
-                ${this._days.map(day => {
-                    const pvData = this._pv.find(pv => isSameDay(pv.time, day.datetime));
-                    return html`
-                        <div class="forecast-interval forecast-interval-daily" @click=${() => this._selectedDay = day.datetime}>
-                            <div class="day-name">${this._weekdayFormat!.format(day.datetime)}</div>
-                            <div>${this._dayFormat!.format(day.datetime)}</div>
-                            <ha-icon icon=${weatherIconsHassNative[day.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
-                            <div class="forecast-values">
-                                ${dailyColumns.map((column, index) => this.renderValueColumn(column.value(day), this._columnRanges[index], column))}
-                                ${pvData ? this.renderValueColumn(pvData.power, this._pvRange, pvColumn) : ''}
-                            </div>
+            <div class="view columns" style="grid-template-columns: repeat(${this._days.length}, minmax(0, 1fr))">
+                ${this._days.map((day, index) => html`
+                    <button class="column day ${index === 0 ? "today" : ""}" style="grid-column: ${index + 1}" @click=${() => this._selectedDay = day.datetime}>
+                        <div class="column-header">
+                            <div class="weekday">${this._weekdayFormat!.format(day.datetime)}</div>
+                            <div class="date">${this._dayFormat!.format(day.datetime)}</div>
+                            ${this.renderConditionIcon(day.condition)}
                         </div>
-                    `;
-                })}
+                        ${this.renderChips(day, index)}
+                    </button>
+                `)}
+                <temperature-chart .series=${this._temperatures}></temperature-chart>
             </div>
         `
     }
 
     private renderHours(selectedDay: Date) {
         return html`
-            <div>
-                <div class="forecast-hourly-header" @click=${() => this._selectedDay = undefined}>
-                    <div>←</div>
-                    <div>${this._selectedDayFormat!.format(selectedDay)}</div>
-                </div>
+            <div class="view hourly">
+                <button class="back" @click=${() => this._selectedDay = undefined}>
+                    <ha-icon icon="mdi:chevron-left"></ha-icon>
+                    ${this._selectedDayFormat!.format(selectedDay)}
+                </button>
                 ${this._hours.length === 0
                     ? html`<div class=${this._errors.hourly ? "error" : "loading"}>${this._errors.hourly ?? "No hourly data"}</div>`
-                    : ''}
-                <div class="forecast-container forecast-container-hourly">
-                    ${this._hours.map(hour => html`
-                        <div class="forecast-interval">
-                            <div>${String(hour.datetime.getHours()).padStart(2, "0")}</div>
-                            <ha-icon icon=${weatherIconsHassNative[hour.condition as keyof typeof weatherIconsHassNative]}></ha-icon>
-                            <div class="forecast-values">
-                                ${hourlyColumns.map((column, index) => this.renderValueColumn(column.value(hour), this._columnRanges[index], column))}
+                    : html`
+                        <div class="scroller">
+                            <div class="columns" style="grid-template-columns: repeat(${this._hours.length}, 52px)">
+                                ${this._hours.map((hour, index) => html`
+                                    <div class="column" style="grid-column: ${index + 1}">
+                                        <div class="column-header">
+                                            <div class="hour">${String(hour.datetime.getHours()).padStart(2, "0")}</div>
+                                            ${this.renderConditionIcon(hour.condition)}
+                                        </div>
+                                        ${this.renderChips(hour, index)}
+                                    </div>
+                                `)}
+                                <temperature-chart .series=${this._temperatures}></temperature-chart>
                             </div>
                         </div>
-                    `)}
-                </div>
+                    `}
             </div>
         `
     }
 
-    private renderValueColumn(value: number, range: ValueRange, style: ColumnStyle) {
+    private renderConditionIcon(condition: string) {
+        const icon = weatherIconsHassNative[condition];
+        return html`<ha-icon icon=${icon?.icon} style="--icon-primary-color: var(--wpv-cond-${icon?.color})"></ha-icon>`;
+    }
+
+    // Chip rows of one column: rain, wind and, when PV data is available, PV
+    private renderChips(forecast: WeatherForecast, index: number) {
         return html`
-            <weather-value-column
+            <div class="chips">
+                ${weatherColumns.map((column, columnIndex) => this.renderChip(column.value(forecast), this._columnRanges[columnIndex], column))}
+                ${this._pv.length > 0 ? this.renderChip(this._pv[index], this._pvRange, pvColumn) : ""}
+            </div>
+        `;
+    }
+
+    private renderChip(value: number, range: ValueRange, style: ColumnStyle) {
+        return html`
+            <weather-value-chip
                 .value=${value}
                 .min=${range.min}
                 .max=${range.max}
                 .color=${style.color}
                 .units=${style.units}
-                .fontSizeRatio=${style.fontSizeRatio}
-            ></weather-value-column>
+                .dashOnZero=${style.dashOnZero}
+            ></weather-value-chip>
         `;
     }
 
@@ -322,6 +430,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             return true;
         }
         return oldHass.locale.language !== hass.locale.language
+            || oldHass.themes.darkMode !== hass.themes.darkMode
             || [this._config.entity, ...(this._config.pv_forecast_entities ?? [])]
                 .some(entityId => oldHass.states[entityId] !== hass.states[entityId]);
     }
