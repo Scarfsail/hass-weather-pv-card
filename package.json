@@ -3,22 +3,22 @@
   "version": "1.0.0",
   "description": "A weather card for Home Assistant that displays the weather and photovoltaic panels forecast for the next 7 days.",
   "main": "dist/weather-pv-card-prod.js",
+  "type": "module",
   "scripts": {
     "build-dev": "vite build --mode development",
     "build-prod": "vite build",
-    "watch": "vite build --watch --mode development"
+    "watch": "vite build --watch --mode development",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "lit": "3.3.1",
-    "dayjs": "1.11.18",
-    "home-assistant-js-websocket": "9.5.0"
+    "lit": "3.3.3"
   },
   "devDependencies": {
-    "vite": "^7.1.7",
-    "typescript": "^5.7.2",
+    "vite": "^8.3.8",
+    "typescript": "^7.0.2",
     "ts-lit-plugin": "2.0.2",
-    "@semantic-release/git": "^10.0.1",
-    "semantic-release": "^24.0.0"
+    "@semantic-release/git": "^11.0.1",
+    "semantic-release": "^26.0.1"
   },
   "release": {
     "branches": [

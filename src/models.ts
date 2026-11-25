@@ -1,5 +1,3 @@
-import dayjs from "dayjs";
-
 export interface WeatherForecastRaw {
     datetime: string;
     condition: string;
@@ -12,7 +10,7 @@ export interface WeatherForecastRaw {
     humidity: number;
 }
 export interface WeatherForecast {
-    datetime: dayjs.Dayjs;
+    datetime: Date;
     condition: string;
     wind_bearing: number;
     uv_index: number;
@@ -23,16 +21,7 @@ export interface WeatherForecast {
     humidity: number;
 }
 
-export interface PvForecastRaw {
-    time: string;
-    power: number;
-}
 export interface PvForecast {
-    time: dayjs.Dayjs;
+    time: Date;
     power: number;
-}
-export interface Forecasts {
-    weatherDaily: WeatherForecast[];
-    weatherHourly: WeatherForecast[];
-    pv: PvForecast[];
 }
