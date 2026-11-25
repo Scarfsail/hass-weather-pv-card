@@ -11,6 +11,8 @@ interface WeatherPvCardConfig extends LovelaceCardConfig {
     days_to_show?: number;
 }
 
+type ForecastType = "daily" | "hourly";
+
 interface ValueRange {
     min: number;
     max: number;
@@ -133,7 +135,8 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     `
 
     private _hass?: HomeAssistant;
-    private _unsubscribes?: Promise<(() => Promise<void>) | void>[];
+    // Only pending or successful subscriptions; a failed one is removed so it can be retried
+    private _subscriptions: Partial<Record<ForecastType, Promise<(() => Promise<void>) | void>>> = {};
     // Derived in willUpdate
     private _days: WeatherForecast[] = [];
     private _pv: PvForecast[] = [];
@@ -148,12 +151,16 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     @state() private _daily?: WeatherForecast[];
     @state() private _hourly?: WeatherForecast[];
     @state() private _selectedDay?: Date;
-    @state() private _error?: string;
+    @state() private _errors: Partial<Record<ForecastType, string>> = {};
 
     public set hass(hass: HomeAssistant) {
         const oldHass = this._hass;
         this._hass = hass;
-        this.subscribeForecasts();
+        const entityId = this._config?.entity;
+        // Subscribe once the entity exists and retry failed subscriptions only when its state changes
+        if (entityId && oldHass?.states[entityId] !== hass.states[entityId]) {
+            this.subscribeForecasts();
+        }
         if (!oldHass || this.watchedHassChanged(oldHass, hass)) {
             this.requestUpdate();
         }
@@ -166,7 +173,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             this.unsubscribeForecasts();
             this._daily = undefined;
             this._hourly = undefined;
-            this._error = undefined;
+            this._errors = {};
             this.subscribeForecasts();
         }
     }
@@ -224,8 +231,8 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
             return this.renderError(`PV forecast entities not found: ${missingPvEntities.join(', ')}`);
         }
 
-        if (this._error && !this._daily) {
-            return this.renderError(this._error);
+        if (this._errors.daily && !this._daily) {
+            return this.renderError(this._errors.daily);
         }
 
         if (!this._daily) {
@@ -280,7 +287,7 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                     <div>${this._selectedDayFormat!.format(selectedDay)}</div>
                 </div>
                 ${this._hours.length === 0
-                    ? html`<div class=${this._error ? "error" : "loading"}>${this._error ?? "No hourly data"}</div>`
+                    ? html`<div class=${this._errors.hourly ? "error" : "loading"}>${this._errors.hourly ?? "No hourly data"}</div>`
                     : ''}
                 <div class="forecast-container forecast-container-hourly">
                     ${this._hours.map(hour => html`
@@ -320,21 +327,24 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
     }
 
     private subscribeForecasts() {
-        // Wait for the entity to exist (e.g. HA still starting); the hass setter retries on each update
-        if (this._unsubscribes || !this.isConnected || !this._hass || !this._config || !this._hass.states[this._config.entity]) {
+        // Wait for the entity to exist (e.g. HA still starting); the hass setter retries when its state changes
+        if (!this.isConnected || !this._hass || !this._config || !this._hass.states[this._config.entity]) {
             return;
         }
         const connection = this._hass.connection;
         const entityId = this._config.entity;
-        // Ignore events and errors from a subscription replaced by setConfig or disconnect
-        const isCurrent = () => this._unsubscribes === unsubscribes;
-        const unsubscribes = (["daily", "hourly"] as const).map(forecastType =>
-            connection.subscribeMessage<ForecastEvent>(
+        for (const forecastType of ["daily", "hourly"] as const) {
+            if (this._subscriptions[forecastType]) {
+                continue;
+            }
+            // Ignore events and errors from a subscription replaced by setConfig or disconnect
+            const isCurrent = () => this._subscriptions[forecastType] === subscription;
+            const subscription = connection.subscribeMessage<ForecastEvent>(
                 event => {
                     if (!isCurrent()) {
                         return;
                     }
-                    this._error = undefined;
+                    this._errors = { ...this._errors, [forecastType]: undefined };
                     const forecast = (event.forecast ?? []).map(toForecast);
                     if (forecastType === "daily") {
                         this._daily = forecast;
@@ -348,15 +358,16 @@ export class WeatherPvCard extends LitElement implements LovelaceCard {
                     return;
                 }
                 console.error(`Error subscribing to ${forecastType} forecast:`, err);
-                this._error = `Failed to load ${forecastType} forecast for ${entityId}: ${err.message}`;
-            })
-        );
-        this._unsubscribes = unsubscribes;
+                delete this._subscriptions[forecastType];
+                this._errors = { ...this._errors, [forecastType]: `Failed to load ${forecastType} forecast for ${entityId}: ${err.message}` };
+            });
+            this._subscriptions[forecastType] = subscription;
+        }
     }
 
     private unsubscribeForecasts() {
-        this._unsubscribes?.forEach(unsubscribe => unsubscribe.then(unsub => unsub?.()).catch(() => {}));
-        this._unsubscribes = undefined;
+        Object.values(this._subscriptions).forEach(unsubscribe => unsubscribe.then(unsub => unsub?.()).catch(() => {}));
+        this._subscriptions = {};
     }
 }
 
