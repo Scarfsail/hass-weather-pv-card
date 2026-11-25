@@ -31,3 +31,22 @@ export function toPvForecast(hass: HomeAssistant, pv_forecast_entities: string[]
         })
         .filter((forecast): forecast is PvForecast => forecast !== null);
 }
+
+// Hourly PV from a Forecast.Solar style `wh_period` attribute (ISO hour -> Wh), taken from the entity whose hours fall on `day`
+export function toHourlyPv(hass: HomeAssistant, pv_forecast_entities: string[], day: Date): PvForecast[] {
+    for (const entityId of pv_forecast_entities) {
+        const whPeriod = hass.states[entityId]?.attributes.wh_period;
+        if (typeof whPeriod !== "object" || whPeriod === null) continue;
+
+        const hours = Object.entries(whPeriod)
+            .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))
+            .map(([key, wh]) => ({ time: new Date(key), power: Math.round(wh / 100) / 10 }))
+            .filter(pv => isSameDay(pv.time, day));
+        if (hours.length > 0) return hours;
+    }
+    return [];
+}
+
+export function isSameDay(a: Date, b: Date) {
+    return a.toDateString() === b.toDateString();
+}

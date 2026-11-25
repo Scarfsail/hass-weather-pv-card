@@ -1,11 +1,12 @@
 import type { WeatherForecastRaw } from "./models";
 
 export interface HomeAssistant {
-    states: Record<string, { state: string }>;
+    states: Record<string, { state: string; attributes: Record<string, unknown> }>;
     connection: {
         subscribeMessage<T>(callback: (message: T) => void, subscribeMessage: Record<string, unknown>): Promise<() => Promise<void>>;
     };
     locale: { language: string };
+    themes: { darkMode: boolean };
 }
 
 export interface LovelaceCardConfig {
